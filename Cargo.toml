@@ -1,0 +1,25 @@
+[package]
+name = "terminal_gameboy"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dillon Quigley <dillonmquigley@gmail.com>"]
+description = "A terminal-based Game Boy emulator with ASCII and block rendering modes"
+license = "MIT"
+repository = "https://github.com/dquigles/ascii_gameboy"
+readme = "README.md"
+keywords = ["gameboy", "emulator", "terminal", "ascii", "retro"]
+categories = ["command-line-utilities", "emulators", "games"]
+
+# Exclude ROMs and saves from the published crate
+exclude = ["roms/", ".saves/"]
+
+[dependencies]
+crossterm = "0.27"
+gameboy_core = "0.3.3"
+rodio = "0.19"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1  # Better inlining across crates
+panic = "abort"    # Smaller binary, less overhead

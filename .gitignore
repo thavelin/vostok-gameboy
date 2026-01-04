@@ -1,0 +1,11 @@
+/target
+
+# Save files directory
+.saves/
+
+# ROM files (don't commit game ROMs)
+*.gb
+*.gbc
+*.sav
+
+.DS_Store
