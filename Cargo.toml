@@ -1,6 +1,6 @@
 [package]
 name = "terminal_gameboy"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Dillon Quigley <dillonmquigley@gmail.com>"]
 description = "A terminal-based Game Boy emulator with ASCII and block rendering modes"

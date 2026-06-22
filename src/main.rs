@@ -23,7 +23,7 @@ use audio::{AudioBuffer, GameboyAudioSource};
 use framebuffer::{FrameBuffer, GB_HEIGHT, GB_WIDTH};
 use input::map_key_to_button;
 use menu::show_menu;
-use renderer::{RenderConfig, RenderMode, Renderer, SCREEN_ROWS};
+use renderer::{RenderConfig, RenderMode, Renderer};
 use save::{get_save_path, load_save, save_game};
 
 // Button count and index mapping (faster than HashMap for 8 buttons)
@@ -59,14 +59,6 @@ impl RTC for SimpleRTC {
     }
 }
 
-/// Try to resize the terminal window
-fn setup_terminal_size(stdout: &mut io::Stdout) -> io::Result<()> {
-    // 160 wide, 72 rows + 1 for FPS
-    write!(stdout, "\x1b[8;{};{}t", SCREEN_ROWS + 2, GB_WIDTH + 2)?;
-    stdout.flush()?;
-    std::thread::sleep(Duration::from_millis(50));
-    Ok(())
-}
 
 fn print_usage(program: &str) {
     eprintln!("ASCII GameBoy Emulator");
@@ -138,9 +130,6 @@ fn main() -> io::Result<()> {
 
     let mut stdout = io::stdout();
 
-    // Try to auto-resize terminal
-    setup_terminal_size(&mut stdout)?;
-
     // Setup terminal
     terminal::enable_raw_mode()?;
     execute!(stdout, EnterAlternateScreen, Hide, Clear(ClearType::All))?;
@@ -149,6 +138,11 @@ fn main() -> io::Result<()> {
 
     let config = RenderConfig { mode };
     let mut renderer = Renderer::new(config);
+
+    // Fit the game to the current terminal size
+    if let Ok((cols, rows)) = terminal::size() {
+        renderer.update_dimensions(cols, rows);
+    }
 
     // Use precise floating-point duration for accurate 60 FPS (16.667ms, not 16ms)
     let frame_duration = Duration::from_secs_f64(1.0 / 60.0);
@@ -191,9 +185,9 @@ fn main() -> io::Result<()> {
         // Process input events
         while event::poll(Duration::from_millis(0))? {
             match event::read()? {
-                Event::Resize(_, _) => {
-                    // Terminal was resized (e.g., zoom in/out) - clear artifacts
-                    renderer.request_clear();
+                Event::Resize(cols, rows) => {
+                    // Terminal was resized (e.g., zoom in/out) — refit and clear
+                    renderer.update_dimensions(cols, rows);
                 }
                 Event::Key(key_event) => {
                     // Handle quit keys
@@ -274,7 +268,7 @@ fn main() -> io::Result<()> {
             fps_timer = Instant::now();
 
             // Draw FPS below screen
-            execute!(stdout, MoveTo(0, SCREEN_ROWS))?;
+            execute!(stdout, MoveTo(0, renderer.fps_row()))?;
             write!(stdout, "{}FPS: {:5.1}  {}", FPS_COLOR, fps, RESET)?;
             stdout.flush()?;
         }

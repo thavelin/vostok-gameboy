@@ -42,7 +42,6 @@ enum MenuSection {
     Audio,
     RomsDirectory,
     GameList,
-    StartGame,
 }
 
 impl MenuSection {
@@ -51,18 +50,16 @@ impl MenuSection {
             Self::RenderMode => Self::Audio,
             Self::Audio => Self::RomsDirectory,
             Self::RomsDirectory => Self::GameList,
-            Self::GameList => Self::StartGame,
-            Self::StartGame => Self::RenderMode,
+            Self::GameList => Self::RenderMode,
         }
     }
-    
+
     fn prev(self) -> Self {
         match self {
-            Self::RenderMode => Self::StartGame,
+            Self::RenderMode => Self::GameList,
             Self::Audio => Self::RenderMode,
             Self::RomsDirectory => Self::Audio,
             Self::GameList => Self::RomsDirectory,
-            Self::StartGame => Self::GameList,
         }
     }
 }
@@ -285,11 +282,7 @@ fn run_menu_loop(stdout: &mut io::Stdout, state: &mut MenuState) -> io::Result<O
                     return Ok(None);
                 }
                 KeyCode::Char('x') | KeyCode::Char('X') => {
-                    if state.current_section == MenuSection::GameList {
-                        state.current_section = MenuSection::RenderMode;
-                    } else {
-                        return Ok(None);
-                    }
+                    return Ok(None);
                 }
                 KeyCode::Up => {
                     if state.current_section == MenuSection::GameList && !state.rom_files.is_empty() {
@@ -298,6 +291,9 @@ fn run_menu_loop(stdout: &mut io::Stdout, state: &mut MenuState) -> io::Result<O
                             if state.selected_rom_index < state.scroll_offset {
                                 state.scroll_offset = state.selected_rom_index;
                             }
+                        } else {
+                            // At the top of the game list — step back into settings
+                            state.current_section = state.current_section.prev();
                         }
                     } else {
                         state.current_section = state.current_section.prev();
@@ -307,10 +303,12 @@ fn run_menu_loop(stdout: &mut io::Stdout, state: &mut MenuState) -> io::Result<O
                     if state.current_section == MenuSection::GameList && !state.rom_files.is_empty() {
                         if state.selected_rom_index + 1 < state.rom_files.len() {
                             state.selected_rom_index += 1;
-                            // Adjust scroll (show max 8 items)
                             if state.selected_rom_index >= state.scroll_offset + 8 {
                                 state.scroll_offset = state.selected_rom_index.saturating_sub(7);
                             }
+                        } else {
+                            // At the bottom of the game list — wrap back to top of settings
+                            state.current_section = state.current_section.next();
                         }
                     } else {
                         state.current_section = state.current_section.next();
@@ -340,7 +338,7 @@ fn run_menu_loop(stdout: &mut io::Stdout, state: &mut MenuState) -> io::Result<O
                 // Z (A button) or Enter (Start): Select/Confirm
                 KeyCode::Char('z') | KeyCode::Char('Z') | KeyCode::Enter => {
                     match state.current_section {
-                        MenuSection::StartGame | MenuSection::GameList => {
+                        MenuSection::GameList => {
                             if !state.rom_files.is_empty() {
                                 let rom_path = state.rom_files[state.selected_rom_index].clone();
                                 return Ok(Some(MenuConfig {
@@ -529,61 +527,8 @@ fn draw_menu(stdout: &mut io::Stdout, state: &MenuState) -> io::Result<()> {
         }
     }
     
-    // Start button
-    let button_y = games_start_y + 10;
-    execute!(stdout, MoveTo(4, button_y))?;
-    
-    let can_start = !state.rom_files.is_empty();
-    if state.current_section == MenuSection::StartGame && can_start {
-        execute!(
-            stdout,
-            SetBackgroundColor(HIGHLIGHT_BG),
-            SetForegroundColor(HIGHLIGHT_FG),
-            Print("  ╔════════════════════╗  "),
-            ResetColor
-        )?;
-        execute!(stdout, MoveTo(4, button_y + 1))?;
-        execute!(
-            stdout,
-            SetBackgroundColor(HIGHLIGHT_BG),
-            SetForegroundColor(HIGHLIGHT_FG),
-            Print("  ║   ▶ START GAME ◀   ║  "),
-            ResetColor
-        )?;
-        execute!(stdout, MoveTo(4, button_y + 2))?;
-        execute!(
-            stdout,
-            SetBackgroundColor(HIGHLIGHT_BG),
-            SetForegroundColor(HIGHLIGHT_FG),
-            Print("  ╚════════════════════╝  "),
-            ResetColor
-        )?;
-    } else {
-        let fg = if can_start { TEXT_COLOR } else { DIM_COLOR };
-        execute!(
-            stdout,
-            SetForegroundColor(fg),
-            Print("  ╔════════════════════╗  "),
-            ResetColor
-        )?;
-        execute!(stdout, MoveTo(4, button_y + 1))?;
-        execute!(
-            stdout,
-            SetForegroundColor(fg),
-            Print("  ║     START GAME     ║  "),
-            ResetColor
-        )?;
-        execute!(stdout, MoveTo(4, button_y + 2))?;
-        execute!(
-            stdout,
-            SetForegroundColor(fg),
-            Print("  ╚════════════════════╝  "),
-            ResetColor
-        )?;
-    }
-    
     // Help text
-    let help_y = button_y + 5;
+    let help_y = games_start_y + 10;
     execute!(stdout, MoveTo(4, help_y), SetForegroundColor(DIM_COLOR))?;
     execute!(stdout, Print("Controls: ↑↓ Navigate  Z/Enter Confirm  X/Esc Back  Space Toggle  R Refresh"))?;
     execute!(stdout, MoveTo(4, help_y + 1), SetForegroundColor(DIM_COLOR))?;

@@ -1,8 +1,9 @@
 use crate::framebuffer::{FrameBuffer, GB_HEIGHT, GB_WIDTH};
 use std::io::{self, Write};
 
-/// Screen rows (144/2 rows for the game using half-block characters)
-pub const SCREEN_ROWS: u16 = 72;
+/// Native Game Boy terminal rows (144 pixels / 2 for half-block = 72)
+const NATIVE_COLS: usize = GB_WIDTH;      // 160
+const NATIVE_ROWS: usize = GB_HEIGHT / 2; // 72
 
 /// UTF-8 bytes for ▀ (upper half block)
 const HALF_BLOCK_UTF8: &[u8] = "▀".as_bytes();
@@ -26,21 +27,90 @@ pub struct Renderer {
     last_fg: u8,  // 256-color index
     last_bg: u8,  // 256-color index
     needs_clear: bool,  // Set when terminal needs full clear (e.g., resize)
+
+    // Scaled output dimensions (terminal cells)
+    out_cols: u16,
+    out_rows: u16,
+    // Centering offsets (terminal cells)
+    left_pad: u16,
+    top_pad: u16,
+    // Nearest-neighbor lookup tables (rebuilt on each dimension update)
+    col_map: Vec<usize>,  // col_map[j] = source GB x for output column j
+    row_map: Vec<usize>,  // row_map[s] = source GB y for output subpixel row s
 }
 
 impl Renderer {
     pub fn new(config: RenderConfig) -> Self {
-        // Estimate ~12 bytes per cell worst case with 256-color mode
-        let buffer_size = GB_WIDTH * (GB_HEIGHT / 2) * 12;
+        // Start at native size (updated before first frame via update_dimensions)
+        let out_cols = NATIVE_COLS as u16;
+        let out_rows = NATIVE_ROWS as u16;
+        let col_map: Vec<usize> = (0..NATIVE_COLS).collect();
+        let row_map: Vec<usize> = (0..GB_HEIGHT).collect();
+
+        // Estimate ~12 bytes per cell worst case with 256-color mode + cursor escapes
+        let buffer_size = GB_WIDTH * (GB_HEIGHT / 2) * 16;
         Self {
             config,
             output_buffer: Vec::with_capacity(buffer_size),
             last_fg: 255, // Invalid sentinel
             last_bg: 255,
             needs_clear: true, // Clear on first frame
+            out_cols,
+            out_rows,
+            left_pad: 0,
+            top_pad: 0,
+            col_map,
+            row_map,
         }
     }
-    
+
+    /// Update output dimensions based on the current terminal size.
+    /// Call on startup and on every resize event.
+    pub fn update_dimensions(&mut self, cols: u16, rows: u16) {
+        // Guard against degenerate terminal sizes
+        if cols == 0 || rows == 0 {
+            return;
+        }
+
+        // Reserve 1 row for the FPS display below the game
+        let usable_rows = rows.saturating_sub(1).max(1);
+
+        // Scale factor: fit both axes, preserve aspect ratio.
+        // f < 1 → downscale; f > 1 → upscale.
+        let f = (cols as f64 / NATIVE_COLS as f64)
+            .min(usable_rows as f64 / NATIVE_ROWS as f64);
+
+        let out_cols = ((NATIVE_COLS as f64 * f).round() as u16).max(1);
+        let out_rows = ((NATIVE_ROWS as f64 * f).round() as u16).max(1);
+        let out_subrows = (out_rows as usize) * 2;
+
+        // Center horizontally and vertically in the available space
+        let left_pad = cols.saturating_sub(out_cols) / 2;
+        let top_pad = usable_rows.saturating_sub(out_rows) / 2;
+
+        // Build nearest-neighbor lookup tables
+        let col_map: Vec<usize> = (0..out_cols as usize)
+            .map(|j| j * GB_WIDTH / out_cols as usize)
+            .collect();
+        let row_map: Vec<usize> = (0..out_subrows)
+            .map(|s| s * GB_HEIGHT / out_subrows)
+            .collect();
+
+        self.out_cols = out_cols;
+        self.out_rows = out_rows;
+        self.left_pad = left_pad;
+        self.top_pad = top_pad;
+        self.col_map = col_map;
+        self.row_map = row_map;
+
+        self.request_clear();
+    }
+
+    /// Terminal row for the FPS overlay (just below the game image, 0-based).
+    pub fn fps_row(&self) -> u16 {
+        self.top_pad + self.out_rows
+    }
+
     /// Mark that the terminal needs a full clear (e.g., after resize)
     pub fn request_clear(&mut self) {
         self.needs_clear = true;
@@ -77,6 +147,43 @@ impl Renderer {
         }
     }
 
+    /// Write a u16 as decimal bytes into the output buffer
+    #[inline]
+    fn write_u16(&mut self, n: u16) {
+        if n >= 10000 {
+            self.output_buffer.push(b'0' + (n / 10000) as u8);
+            self.output_buffer.push(b'0' + ((n / 1000) % 10) as u8);
+            self.output_buffer.push(b'0' + ((n / 100) % 10) as u8);
+            self.output_buffer.push(b'0' + ((n / 10) % 10) as u8);
+            self.output_buffer.push(b'0' + (n % 10) as u8);
+        } else if n >= 1000 {
+            self.output_buffer.push(b'0' + (n / 1000) as u8);
+            self.output_buffer.push(b'0' + ((n / 100) % 10) as u8);
+            self.output_buffer.push(b'0' + ((n / 10) % 10) as u8);
+            self.output_buffer.push(b'0' + (n % 10) as u8);
+        } else if n >= 100 {
+            self.output_buffer.push(b'0' + (n / 100) as u8);
+            self.output_buffer.push(b'0' + ((n / 10) % 10) as u8);
+            self.output_buffer.push(b'0' + (n % 10) as u8);
+        } else if n >= 10 {
+            self.output_buffer.push(b'0' + (n / 10) as u8);
+            self.output_buffer.push(b'0' + (n % 10) as u8);
+        } else {
+            self.output_buffer.push(b'0' + n as u8);
+        }
+    }
+
+    /// Emit absolute cursor-position escape: ESC[row;colH (1-based)
+    #[inline]
+    fn move_to(&mut self, row: u16, col: u16) {
+        self.output_buffer.push(b'\x1b');
+        self.output_buffer.push(b'[');
+        self.write_u16(row);
+        self.output_buffer.push(b';');
+        self.write_u16(col);
+        self.output_buffer.push(b'H');
+    }
+
     /// Set foreground using 256-color mode (much shorter escape sequences)
     #[inline]
     fn set_fg_256(&mut self, color: u8) {
@@ -108,8 +215,8 @@ impl Renderer {
 
     fn render_block(&mut self, fb: &FrameBuffer, stdout: &mut io::Stdout) -> io::Result<()> {
         self.output_buffer.clear();
-        
-        // Use sentinel to force first pixel to set colors
+
+        // Use sentinels to force first pixel to set colors
         self.last_fg = 255;
         self.last_bg = 255;
 
@@ -119,23 +226,31 @@ impl Renderer {
             self.needs_clear = false;
         }
 
-        // Start at top-left
-        self.output_buffer.extend_from_slice(b"\x1b[H");
+        let out_cols = self.out_cols as usize;
+        let out_rows = self.out_rows as usize;
+        let left_col = self.left_pad + 1; // 1-based
 
-        for y in (0..GB_HEIGHT).step_by(2) {
-            for x in 0..GB_WIDTH {
-                let top = fb.get_pixel(x, y);
-                let bottom = fb.get_pixel(x, y + 1);
+        for i in 0..out_rows {
+            // Position cursor at the start of each output row
+            let row = self.top_pad + i as u16 + 1; // 1-based
+            self.move_to(row, left_col);
 
-                // Use 256-color palette for much shorter escape sequences
+            let sy_top = self.row_map[2 * i];
+            let sy_bot = self.row_map[2 * i + 1];
+
+            for j in 0..out_cols {
+                let sx = self.col_map[j];
+                let top = fb.get_pixel(sx, sy_top);
+                let bottom = fb.get_pixel(sx, sy_bot);
+
+                // Use 256-color palette for shorter escape sequences
                 let fg_color = Self::rgb_to_256(top.r, top.g, top.b);
                 let bg_color = Self::rgb_to_256(bottom.r, bottom.g, bottom.b);
-                
+
                 self.set_fg_256(fg_color);
                 self.set_bg_256(bg_color);
                 self.output_buffer.extend_from_slice(HALF_BLOCK_UTF8);
             }
-            self.output_buffer.extend_from_slice(b"\r\n");
         }
 
         // Reset colors at the end
@@ -143,13 +258,13 @@ impl Renderer {
 
         stdout.write_all(&self.output_buffer)?;
         stdout.flush()?;
-        
+
         Ok(())
     }
 
     fn render_ascii(&mut self, fb: &FrameBuffer, stdout: &mut io::Stdout) -> io::Result<()> {
         self.output_buffer.clear();
-        
+
         // Use sentinel to force first pixel to set colors
         self.last_fg = 255;
 
@@ -159,13 +274,25 @@ impl Renderer {
             self.needs_clear = false;
         }
 
-        // Start at top-left with black background (256-color index 16 = black)
-        self.output_buffer.extend_from_slice(b"\x1b[H\x1b[48;5;16m");
+        // Black background (256-color index 16 = black)
+        self.output_buffer.extend_from_slice(b"\x1b[48;5;16m");
 
-        for y in (0..GB_HEIGHT).step_by(2) {
-            for x in 0..GB_WIDTH {
-                let top = fb.get_pixel(x, y);
-                let bottom = fb.get_pixel(x, y + 1);
+        let out_cols = self.out_cols as usize;
+        let out_rows = self.out_rows as usize;
+        let left_col = self.left_pad + 1; // 1-based
+
+        for i in 0..out_rows {
+            // Position cursor at the start of each output row
+            let row = self.top_pad + i as u16 + 1; // 1-based
+            self.move_to(row, left_col);
+
+            let sy_top = self.row_map[2 * i];
+            let sy_bot = self.row_map[2 * i + 1];
+
+            for j in 0..out_cols {
+                let sx = self.col_map[j];
+                let top = fb.get_pixel(sx, sy_top);
+                let bottom = fb.get_pixel(sx, sy_bot);
 
                 // Average two u8 greys using integer math (avoids overflow)
                 let avg_grey = ((top.to_grey() as u16 + bottom.to_grey() as u16) >> 1) as u8;
@@ -179,7 +306,6 @@ impl Renderer {
                 self.set_fg_256(fg_color);
                 self.output_buffer.push(ascii_char);
             }
-            self.output_buffer.extend_from_slice(b"\r\n");
         }
 
         // Reset colors at the end
@@ -190,4 +316,3 @@ impl Renderer {
         Ok(())
     }
 }
-
