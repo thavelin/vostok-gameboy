@@ -1,4 +1,5 @@
 mod audio;
+mod config;
 mod framebuffer;
 mod input;
 mod menu;

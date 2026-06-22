@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::thread;
 
+use crate::config;
 use crate::renderer::RenderMode;
 
 /// Configuration selected from the menu
@@ -177,7 +178,14 @@ fn play_startup_animation(stdout: &mut io::Stdout) -> io::Result<()> {
 
 impl MenuState {
     fn new() -> Self {
-        let roms_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        // Load persisted default; fall back to cwd if none saved or path no longer exists
+        let saved = config::load();
+        let roms_dir = saved
+            .roms_dir
+            .filter(|p| p.is_dir())
+            .unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+            });
         let rom_files = scan_for_roms(&roms_dir);
         
         Self {
@@ -186,7 +194,7 @@ impl MenuState {
             roms_dir,
             rom_files,
             selected_rom_index: 0,
-            current_section: MenuSection::GameList,
+            current_section: MenuSection::RenderMode,
             scroll_offset: 0,
         }
     }
@@ -284,7 +292,7 @@ fn run_menu_loop(stdout: &mut io::Stdout, state: &mut MenuState) -> io::Result<O
                     }
                 }
                 KeyCode::Up => {
-                    if state.current_section == MenuSection::GameList {
+                    if state.current_section == MenuSection::GameList && !state.rom_files.is_empty() {
                         if state.selected_rom_index > 0 {
                             state.selected_rom_index -= 1;
                             if state.selected_rom_index < state.scroll_offset {
@@ -296,7 +304,7 @@ fn run_menu_loop(stdout: &mut io::Stdout, state: &mut MenuState) -> io::Result<O
                     }
                 }
                 KeyCode::Down => {
-                    if state.current_section == MenuSection::GameList {
+                    if state.current_section == MenuSection::GameList && !state.rom_files.is_empty() {
                         if state.selected_rom_index + 1 < state.rom_files.len() {
                             state.selected_rom_index += 1;
                             // Adjust scroll (show max 8 items)
@@ -343,16 +351,14 @@ fn run_menu_loop(stdout: &mut io::Stdout, state: &mut MenuState) -> io::Result<O
                             }
                         }
                         MenuSection::RomsDirectory => {
-                            // Toggle between current dir and roms subdir
-                            let roms_subdir = state.roms_dir.join("roms");
-                            if state.roms_dir.ends_with("roms") || state.roms_dir.ends_with("ROMs") {
-                                state.roms_dir = state.roms_dir.parent()
-                                    .map(|p| p.to_path_buf())
-                                    .unwrap_or_else(|| PathBuf::from("."));
-                            } else if roms_subdir.exists() {
-                                state.roms_dir = roms_subdir;
+                            if let Some(chosen) = pick_directory(stdout, &state.roms_dir)? {
+                                state.roms_dir = chosen.clone();
+                                state.refresh_roms();
+                                // Persist the choice
+                                let _ = config::save(&config::Config {
+                                    roms_dir: Some(chosen),
+                                });
                             }
-                            state.refresh_roms();
                         }
                         MenuSection::RenderMode => {
                             state.render_mode = match state.render_mode {
@@ -421,16 +427,21 @@ fn draw_menu(stdout: &mut io::Stdout, state: &MenuState) -> io::Result<()> {
         state.current_section == MenuSection::Audio
     )?;
     
-    // ROMs Directory
-    let dir_display = state.roms_dir.file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| state.roms_dir.to_string_lossy().to_string());
+    // ROMs Directory — show full path, indicate if it's the persisted default
+    let saved_roms_dir = config::load().roms_dir;
+    let is_saved = saved_roms_dir.as_deref() == Some(state.roms_dir.as_path());
+    let dir_display = state.roms_dir.to_string_lossy().to_string();
+    let dir_label = if is_saved {
+        format!("{} [saved]", truncate_str(&dir_display, 32))
+    } else {
+        truncate_str(&dir_display, 40)
+    };
     draw_option(
-        stdout, 
-        4, 
-        menu_start_y + 4, 
-        "Directory  ", 
-        &format!("./{:<20}", truncate_str(&dir_display, 20)),
+        stdout,
+        4,
+        menu_start_y + 4,
+        "Directory  ",
+        &dir_label,
         state.current_section == MenuSection::RomsDirectory
     )?;
     
@@ -574,7 +585,9 @@ fn draw_menu(stdout: &mut io::Stdout, state: &MenuState) -> io::Result<()> {
     // Help text
     let help_y = button_y + 5;
     execute!(stdout, MoveTo(4, help_y), SetForegroundColor(DIM_COLOR))?;
-    execute!(stdout, Print("Controls: ↑↓←→ Navigate  Z Confirm  X Back  Enter Start  Space Toggle  R Refresh"))?;
+    execute!(stdout, Print("Controls: ↑↓ Navigate  Z/Enter Confirm  X/Esc Back  Space Toggle  R Refresh"))?;
+    execute!(stdout, MoveTo(4, help_y + 1), SetForegroundColor(DIM_COLOR))?;
+    execute!(stdout, Print("Directory: Enter Browse  P Type path  S Set & save default"))?;
     execute!(stdout, ResetColor)?;
     
     stdout.flush()?;
@@ -613,6 +626,340 @@ fn truncate_str(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         format!("{}…", &s[..max_len - 1])
+    }
+}
+
+/// Count .gb/.gbc files directly inside a directory (non-recursive).
+fn count_roms_in(dir: &Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .map(|x| {
+                            let x = x.to_string_lossy().to_lowercase();
+                            x == "gb" || x == "gbc"
+                        })
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+/// Read the immediate subdirectories of `dir`, sorted case-insensitively.
+fn list_subdirs(dir: &Path) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|e| {
+                    let p = e.path();
+                    // Skip hidden directories (start with '.')
+                    let name = p.file_name()?.to_string_lossy().to_string();
+                    if name.starts_with('.') {
+                        return None;
+                    }
+                    if p.is_dir() { Some(p) } else { None }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    dirs.sort_by(|a, b| {
+        a.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase()
+            .cmp(&b.file_name().unwrap_or_default().to_string_lossy().to_lowercase())
+    });
+    dirs
+}
+
+/// Interactive directory browser. Returns the chosen PathBuf if the user
+/// pressed S (Set & Save), or None if they cancelled.
+///
+/// Runs inside the already-active alternate screen / raw mode.
+fn pick_directory(stdout: &mut io::Stdout, start_dir: &Path) -> io::Result<Option<PathBuf>> {
+    let mut current = start_dir.to_path_buf();
+    let mut subdirs = list_subdirs(&current);
+    // Index 0 = ".." (go up), indices 1.. = subdirs
+    let mut selected: usize = 0;
+    let mut scroll: usize = 0;
+    let max_visible: usize = 16;
+
+    // Input mode state
+    let mut typing_path = false;
+    let mut typed_input = String::new();
+    let mut status_msg: Option<(String, bool)> = None; // (msg, is_error)
+
+    loop {
+        // ── Draw the browser ──────────────────────────────────────────────
+        execute!(stdout, Clear(ClearType::All))?;
+
+        // Title bar
+        execute!(
+            stdout,
+            MoveTo(2, 0),
+            SetForegroundColor(ACCENT_COLOR),
+            Print("╔══ Browse ROM Directory ══╗"),
+            ResetColor
+        )?;
+
+        // Current path
+        execute!(
+            stdout,
+            MoveTo(2, 1),
+            SetForegroundColor(TEXT_COLOR),
+            Print("Path: "),
+            SetForegroundColor(HIGHLIGHT_FG),
+            Print(truncate_str(&current.to_string_lossy(), 60)),
+            ResetColor
+        )?;
+
+        // ROM count in current dir
+        let rom_count = count_roms_in(&current);
+        let rom_hint = if rom_count == 0 {
+            format!("  ({} ROMs here)", rom_count)
+        } else {
+            format!("  ({} ROM{} here ✓)", rom_count, if rom_count == 1 { "" } else { "s" })
+        };
+        execute!(
+            stdout,
+            MoveTo(2, 2),
+            SetForegroundColor(if rom_count > 0 { ACCENT_COLOR } else { DIM_COLOR }),
+            Print(&rom_hint),
+            ResetColor
+        )?;
+
+        execute!(
+            stdout,
+            MoveTo(2, 3),
+            SetForegroundColor(BORDER_COLOR),
+            Print("─".repeat(60)),
+            ResetColor
+        )?;
+
+        // Build entry list: ".." first, then subdirs
+        let total_entries = 1 + subdirs.len(); // 0 = "..", 1.. = subdirs
+        let list_start_y: u16 = 4;
+
+        // Clamp scroll so selected is always visible
+        if selected < scroll {
+            scroll = selected;
+        } else if selected >= scroll + max_visible {
+            scroll = selected.saturating_sub(max_visible - 1);
+        }
+
+        for i in 0..max_visible {
+            let entry_idx = scroll + i;
+            if entry_idx >= total_entries {
+                break;
+            }
+            let y = list_start_y + i as u16;
+            let is_selected = entry_idx == selected;
+
+            if entry_idx == 0 {
+                // ".." entry
+                execute!(stdout, MoveTo(2, y))?;
+                if is_selected {
+                    execute!(
+                        stdout,
+                        SetBackgroundColor(HIGHLIGHT_BG),
+                        SetForegroundColor(HIGHLIGHT_FG),
+                        Print(format!(" ▶ ../  (go up) {:>35} ", "")),
+                        ResetColor
+                    )?;
+                } else {
+                    execute!(
+                        stdout,
+                        SetForegroundColor(DIM_COLOR),
+                        Print("   ../  (go up)"),
+                        ResetColor
+                    )?;
+                }
+            } else {
+                let sub = &subdirs[entry_idx - 1];
+                let name = sub
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                let roms_here = count_roms_in(sub);
+                let suffix = if roms_here > 0 {
+                    format!("  [{} ROM{}]", roms_here, if roms_here == 1 { "" } else { "s" })
+                } else {
+                    String::new()
+                };
+
+                execute!(stdout, MoveTo(2, y))?;
+                if is_selected {
+                    execute!(
+                        stdout,
+                        SetBackgroundColor(HIGHLIGHT_BG),
+                        SetForegroundColor(HIGHLIGHT_FG),
+                        Print(format!(" ▶ {:<44}{}", truncate_str(&name, 44), truncate_str(&suffix, 14))),
+                        ResetColor
+                    )?;
+                } else {
+                    execute!(
+                        stdout,
+                        SetForegroundColor(TEXT_COLOR),
+                        Print(format!("   {:<44}", truncate_str(&name, 44))),
+                        SetForegroundColor(ACCENT_COLOR),
+                        Print(truncate_str(&suffix, 14)),
+                        ResetColor
+                    )?;
+                }
+            }
+        }
+
+        // Scroll indicators
+        let vis_end_y = list_start_y + max_visible.min(total_entries) as u16;
+        if scroll > 0 {
+            execute!(stdout, MoveTo(64, list_start_y), SetForegroundColor(ACCENT_COLOR), Print("▲"), ResetColor)?;
+        }
+        if scroll + max_visible < total_entries {
+            execute!(stdout, MoveTo(64, vis_end_y - 1), SetForegroundColor(ACCENT_COLOR), Print("▼"), ResetColor)?;
+        }
+
+        // Separator
+        let sep_y = list_start_y + max_visible as u16 + 1;
+        execute!(
+            stdout,
+            MoveTo(2, sep_y),
+            SetForegroundColor(BORDER_COLOR),
+            Print("─".repeat(60)),
+            ResetColor
+        )?;
+
+        // Status / path-input line
+        let status_y = sep_y + 1;
+        if typing_path {
+            execute!(
+                stdout,
+                MoveTo(2, status_y),
+                SetForegroundColor(ACCENT_COLOR),
+                Print("Path: "),
+                SetForegroundColor(TEXT_COLOR),
+                Print(&typed_input),
+                Print("█"),  // cursor
+                ResetColor
+            )?;
+        } else if let Some((ref msg, is_err)) = status_msg {
+            execute!(
+                stdout,
+                MoveTo(2, status_y),
+                SetForegroundColor(if is_err {
+                    Color::Rgb { r: 255, g: 80, b: 80 }
+                } else {
+                    ACCENT_COLOR
+                }),
+                Print(msg),
+                ResetColor
+            )?;
+        }
+
+        // Help footer
+        let help_y = status_y + 2;
+        execute!(
+            stdout,
+            MoveTo(2, help_y),
+            SetForegroundColor(DIM_COLOR),
+            Print("↑↓ Move  Enter Navigate  S Set&Save  P Type path  Esc/X Cancel"),
+            ResetColor
+        )?;
+
+        stdout.flush()?;
+
+        // ── Handle input ──────────────────────────────────────────────────
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            status_msg = None; // clear status on next keypress
+
+            if typing_path {
+                match key.code {
+                    KeyCode::Esc => {
+                        typing_path = false;
+                        typed_input.clear();
+                    }
+                    KeyCode::Enter => {
+                        // Confirm the typed path
+                        let expanded = if typed_input.is_empty() {
+                            None
+                        } else {
+                            config::expand_tilde(typed_input.trim())
+                        };
+                        if let Some(p) = expanded {
+                            if p.is_dir() {
+                                current = p;
+                                subdirs = list_subdirs(&current);
+                                selected = 0;
+                                scroll = 0;
+                                typing_path = false;
+                                typed_input.clear();
+                                status_msg = Some(("Directory set.".to_string(), false));
+                            } else {
+                                status_msg = Some(("Path not found or not a directory.".to_string(), true));
+                            }
+                        } else {
+                            status_msg = Some(("Invalid path.".to_string(), true));
+                        }
+                        if !typing_path { typed_input.clear(); }
+                    }
+                    KeyCode::Backspace => {
+                        typed_input.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        typed_input.push(c);
+                    }
+                    _ => {}
+                }
+            } else {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('x') | KeyCode::Char('X') => {
+                        return Ok(None);
+                    }
+                    KeyCode::Up => {
+                        if selected > 0 { selected -= 1; }
+                    }
+                    KeyCode::Down => {
+                        if selected + 1 < total_entries { selected += 1; }
+                    }
+                    KeyCode::Enter | KeyCode::Char('z') | KeyCode::Char('Z') => {
+                        if selected == 0 {
+                            // Go up
+                            if let Some(parent) = current.parent().map(|p| p.to_path_buf()) {
+                                current = parent;
+                                subdirs = list_subdirs(&current);
+                                selected = 0;
+                                scroll = 0;
+                            }
+                        } else {
+                            // Enter subdirectory
+                            let target = subdirs[selected - 1].clone();
+                            current = target;
+                            subdirs = list_subdirs(&current);
+                            selected = 0;
+                            scroll = 0;
+                        }
+                    }
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        // Set & Save current directory
+                        return Ok(Some(current));
+                    }
+                    KeyCode::Char('p') | KeyCode::Char('P') => {
+                        // Switch to manual path entry mode
+                        typing_path = true;
+                        typed_input.clear();
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
