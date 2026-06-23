@@ -6,7 +6,7 @@ Utilizes [gameboy_core](https://crates.io/crates/gameboy_core) for the emulator,
 
 ## Demo
 
-<video src="media/terminal_gameboy.mp4" autoplay loop muted playsinline></video>
+![Terminal GameBoy demo](media/terminal_gameboy.gif)
 
 ![Pokemon Crystal running in block mode](./images/PokemonCrystal.png)
 
