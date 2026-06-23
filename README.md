@@ -4,6 +4,10 @@ A rust, terminal-based Game Boy and Game Boy Color emulator with ASCII art and b
 
 Utilizes [gameboy_core](https://crates.io/crates/gameboy_core) for the emulator, providing input & output directly to the emulator.
 
+## Demo
+
+<video src="media/terminal_gameboy.mp4" autoplay loop muted playsinline></video>
+
 ![Pokemon Crystal running in block mode](./images/PokemonCrystal.png)
 
 ## Features
