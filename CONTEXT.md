@@ -31,18 +31,16 @@ Vostok Gameboy. The emulation itself is `gameboy_core` 0.3.3 (Apache-2.0), copie
   with button presses gives the same final picture as 1200 frames straight through.
 - A real-time session with the sound device open (muted) holds ~60 fps; turbo and stop work.
 
+- **Played by Troy in Herdr on Windows (2026-11-14, `cmd` pane):** the shell and the Kitty picture draw
+  correctly at about 105x75 and 245x72, the buttons work and the side panels show. Two fixes came out of it:
+  Herdr sends "key down, key up" back to back, so `InputTracker` ignores such releases and uses its hold
+  timer; and panels are the default view, fitted to the room beside any body (`Plan::panels`), because he
+  wants them whenever there is space.
+
 ## Not checked
 
-- **The app in a real terminal.** Nobody has played it yet: the loop in `main.rs` (keys, key releases, Kitty
-  graphics placement and clean-up, resize, sound out loud) has only been compiled. Everything under it is
-  tested through `App::key` and `view::render`.
-- First report from Troy (2026-11-14): it runs, but the keyboard did nothing. Suspected cause, fixed without
-  being reproduced: terminals that send "key down, key up" back to back (Herdr on Windows does this) let go of
-  a button before the game read it. `InputTracker` now ignores such releases and uses its hold timer. Not yet
-  confirmed by him; if keys are still dead, find out whether the library keys work too.
-- Troy's screenshots the same day (Herdr on Windows, a `cmd` pane): the shell and the Kitty picture draw
-  correctly at about 105x75 (tall body) and 245x72. He wants the side panels whenever there is room, so
-  panels are now the default view and fit themselves to the space beside any body (`layout::plan` -> `Plan::panels`).
+- Terminals other than Herdr on Windows (see Checked): a terminal with real key releases, one without Kitty
+  graphics, resize while playing, and the pause menu / save states by hand.
 - The quarter-block shell in fonts other than the browser's (seams between cells depend on the font).
 - Battery saves written by a real game (Pokemon) and loaded again. Covered by tests with the test ROM only.
 - A save state taken with the real-time clock running (no MBC3 clock game in the test set).
