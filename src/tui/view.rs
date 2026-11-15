@@ -926,7 +926,7 @@ fn panels(
             ),
             (
                 "fits",
-                "200×56 · 140×39 · 70×60 · 100×28 · 80×24".to_string(),
+                "200×56 · 140×39 · 70×60 · 100×28 · smaller: screen first".to_string(),
             ),
             (
                 "fallback",
