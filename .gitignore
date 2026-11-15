@@ -7,5 +7,6 @@
 *.gb
 *.gbc
 *.sav
+*.state
 
 .DS_Store

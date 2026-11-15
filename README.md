@@ -1,8 +1,12 @@
-# Terminal GameBoy
+# Vostok Gameboy
+
+> A fork of [terminal_gameboy](https://github.com/dquigles/terminal_gameboy) by Dillon Quigley, being rebuilt as a Vostok terminal app.
+> The backend is described in [MAP.md](MAP.md); current state and limits are in [CONTEXT.md](CONTEXT.md).
+> The screenshots below are from the original app.
 
 A rust, terminal-based Game Boy and Game Boy Color emulator with ASCII art and block rendering modes. Play your favorite retro games right in your terminal!
 
-Utilizes [gameboy_core](https://crates.io/crates/gameboy_core) for the emulator, providing input & output directly to the emulator.
+The emulator itself is [gameboy_core](https://crates.io/crates/gameboy_core), kept in `core/` with save states added (see `core/README.md`).
 
 ## Demo
 
@@ -16,27 +20,18 @@ Utilizes [gameboy_core](https://crates.io/crates/gameboy_core) for the emulator,
   - **ASCII mode** — Classic ASCII art using brightness characters
   - **Block mode** — Unicode half-block characters for higher fidelity
 - **Audio support** — Full sound emulation via rodio
-- **Save states** — Automatic save/load for games with battery backup
+- **Battery saves** — Automatic save/load for games with battery backup
+- **Save states** — Four slots per game, each a snapshot of the whole machine with a preview picture
 - **Interactive menu** — ROM browser when launched without arguments
 - **Cross-platform** — Works on macOS, Linux, and Windows
 
 ## Installation
 
-### From crates.io
-
 ```bash
-cargo install terminal_gameboy
-```
-
-### From source
-
-```bash
-git clone https://github.com/dquigles/terminal_gameboy.git
-cd terminal_gameboy
 cargo build --release
 ```
 
-The binary will be at `target/release/terminal_gameboy`.
+The binary will be at `target/release/vostok-gameboy`.
 
 ## Usage
 
@@ -45,7 +40,7 @@ The binary will be at `target/release/terminal_gameboy`.
 Simply run without arguments to get an interactive ROM browser:
 
 ```bash
-terminal_gameboy
+vostok-gameboy
 ```
 
 ![Interactive ROM browser menu](./images/menu.png)
@@ -53,7 +48,7 @@ terminal_gameboy
 ### Command Line
 
 ```bash
-terminal_gameboy <rom_file.gb> [OPTIONS]
+vostok-gameboy <rom.gb | rom.gbc | rom.zip> [OPTIONS]
 ```
 
 #### Options
@@ -63,19 +58,20 @@ terminal_gameboy <rom_file.gb> [OPTIONS]
 | `--ascii` | ASCII art mode with brightness characters (default) |
 | `--block` | Unicode block mode with solid half-blocks           |
 | `--mute`  | Disable audio output                                |
+| `--palette NAME` | Colours for four-shade games: grey, dmg, pocket, phosphor, amber |
 | `--help`  | Show help message                                   |
 
 ### Examples
 
 ```bash
 # Run with ASCII rendering (default)
-terminal_gameboy pokemon.gb
+vostok-gameboy pokemon.gb
 
 # Run with block rendering
-terminal_gameboy pokemon.gb --block
+vostok-gameboy pokemon.gb --block
 
 # Run without sound
-terminal_gameboy pokemon.gb --mute
+vostok-gameboy pokemon.gb --mute
 ```
 
 #### Rendering Modes
@@ -92,14 +88,32 @@ terminal_gameboy pokemon.gb --mute
 
 ## Controls
 
-| Key        | Action   |
-| ---------- | -------- |
-| Arrow keys | D-Pad    |
-| Z          | A button |
-| X          | B button |
-| Enter      | Start    |
-| Space      | Select   |
-| Q / Esc    | Quit     |
+| Key               | Action          |
+| ----------------- | --------------- |
+| Arrow keys / WASD | D-Pad           |
+| Z / K             | A button        |
+| X / J             | B button        |
+| Enter             | Start           |
+| Backspace / Space | Select          |
+| P                 | Pause           |
+| Tab               | Turbo on / off  |
+| Q / Esc           | Quit (saves)    |
+
+Keys are set in the `[keys]` table of `~/.config/vostok-gameboy/config.toml`.
+
+## JSON command line
+
+For scripts and agents; see `vostok-gameboy ctl help`.
+
+```bash
+vostok-gameboy ctl dirs add ~/Games
+vostok-gameboy ctl list
+vostok-gameboy ctl run Tetris.zip --frames 600 --press start@300 --shot tetris.png
+vostok-gameboy ctl run Tetris.zip --frames 600 --save-state 1
+vostok-gameboy ctl run Tetris.zip --load-state 1 --frames 60
+vostok-gameboy ctl states Tetris.zip
+vostok-gameboy ctl palette Tetris.zip amber
+```
 
 ## Terminal Requirements
 
@@ -123,11 +137,16 @@ For the best experience:
 
 ## ROM Files
 
-This emulator requires Game Boy (`.gb`) or Game Boy Color (`.gbc`) ROM files. You must provide your own legally obtained ROM files.
+This emulator requires Game Boy (`.gb`) or Game Boy Color (`.gbc`) ROM files, loose or inside a `.zip`. You must provide your own legally obtained ROM files.
 
 ## Save Files
 
-Save files are automatically stored in a `.saves/` directory next to the ROM file. The emulator automatically loads saves on startup and saves on exit.
+Games with a battery save to `~/.config/vostok-gameboy/saves/<rom name>.sav` (a standard `.sav`). The save is
+written shortly after the game saves, when you pause, and on exit; the previous file is kept as `.sav.bak`.
+Saves from the original app (`.saves/` next to the ROM) are picked up automatically.
+
+Save states are separate: `~/.config/vostok-gameboy/states/<rom id>/slot<N>.state`, four slots per game. They
+only load into this app, and only into the game they were made with.
 
 ## License
 
@@ -137,6 +156,6 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 Built with:
 
-- [gameboy_core](https://crates.io/crates/gameboy_core) — Game Boy emulation
+- [gameboy_core](https://crates.io/crates/gameboy_core) by Ben Konz — Game Boy emulation (Apache-2.0, copied into `core/`)
 - [crossterm](https://crates.io/crates/crossterm) — Terminal handling
 - [rodio](https://crates.io/crates/rodio) — Audio playback

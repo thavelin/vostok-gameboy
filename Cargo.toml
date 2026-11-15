@@ -1,25 +1,43 @@
 [package]
-name = "terminal_gameboy"
-version = "0.1.2"
+name = "vostok-gameboy"
+version = "0.2.0"
 edition = "2021"
-authors = ["Dillon Quigley <dillonmquigley@gmail.com>"]
-description = "A terminal-based Game Boy emulator with ASCII and block rendering modes"
+authors = ["Troy Havelin", "Dillon Quigley <dillonmquigley@gmail.com>"]
+description = "Vostok Gameboy: a terminal Game Boy / Game Boy Color player in the Vostok TUI style"
 license = "MIT"
-repository = "https://github.com/dquigles/terminal_gameboy"
+repository = "https://github.com/thavelin/vostok-gameboy"
 readme = "README.md"
-keywords = ["gameboy", "emulator", "terminal", "ascii", "retro"]
-categories = ["command-line-utilities", "emulators", "games"]
+publish = false
 
-# Exclude ROMs and saves from the published crate
-exclude = ["roms/", ".saves/"]
+[lib]
+name = "vostok_gameboy"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vostok-gameboy"
+path = "src/main.rs"
 
 [dependencies]
-crossterm = "0.27"
-gameboy_core = "0.3.3"
+# The emulator core (CPU, picture, sound, mappers), kept in this repo so it can
+# be changed: see core/README.md. Everything else here wraps it.
+gameboy_core = { path = "core" }
+crossterm = "0.29"
 rodio = "0.19"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "1"
+# ROMs are usually kept zipped; only deflate is needed.
+zip = { version = "9", default-features = false, features = ["deflate"] }
+crc32fast = "1"
+# Screenshots from `ctl run --shot`.
+png = "0.18"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 opt-level = 3
 lto = true
-codegen-units = 1  # Better inlining across crates
-panic = "abort"    # Smaller binary, less overhead
+codegen-units = 1
+# No `panic = "abort"`: the session thread catches a core panic and reports it
+# instead of killing the terminal while it is in raw mode.
