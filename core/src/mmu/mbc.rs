@@ -1,0 +1,11 @@
+use super::cartridge::Cartridge;
+
+pub trait Mbc {
+    fn read_byte(&self, index: u16) -> u8;
+    fn write_byte(&mut self, index: u16, value: u8);
+    fn get_cartridge(&self) -> &Cartridge;
+    fn get_cartridge_mut(&mut self) -> &mut Cartridge;
+    fn set_ram_change_callback(&mut self, f: Box<dyn FnMut(usize, u8)>);
+    fn save_state(&self, w: &mut crate::state::Writer);
+    fn load_state(&mut self, r: &mut crate::state::Reader) -> crate::state::StateResult;
+}

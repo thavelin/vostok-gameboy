@@ -1,0 +1,12 @@
+[package]
+name = "gameboy_core"
+version = "0.3.3"
+authors = ["Ben Konz <benkonz@protonmail.com>", "Troy Havelin"]
+license = "Apache-2.0"
+repository = "https://github.com/benkonz/gameboy_emulator"
+description = "Game Boy emulation core: gameboy_core 0.3.3 with save states added for Vostok Gameboy"
+edition = "2018"
+publish = false
+
+[dependencies]
+bitflags = "1.2"
