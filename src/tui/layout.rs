@@ -1,7 +1,7 @@
 //! Which shell fits the terminal. Pure: sizes in, a plan out.
 //!
 //! The Figma file draws the player at fixed terminal sizes (200x56, 140x39,
-//! 70x60, 100x28, 80x24, 40x12). The planner picks the largest drawing that
+//! 70x60, 100x28, 40x12); below those the focus layout is drawn to measure. The planner picks the largest drawing that
 //! fits and centres it; a drawing wider than the terminal may be cropped at
 //! the sides as long as the body itself still fits.
 
@@ -17,8 +17,9 @@ pub enum Kind {
     Tall,
     /// 100x28: screen in the middle, controls either side, no wordmark.
     Compact,
-    /// 80x24: the picture at half size.
-    Small,
+    /// Small terminals: the picture as large as fits in a slim bezel, the
+    /// controls in a strip under it. Drawn to measure, not from a drawing.
+    Focus,
     /// No body: the picture as large as the terminal allows.
     Screen,
     /// Nothing fits: say so (the game is paused).
@@ -91,8 +92,10 @@ const SHELLS: [Shell; 5] = [
     (Kind::Tall, (70, 60), (70, 60), false, (3, 67)),
     (Kind::Wide, (140, 39), (86, 39), false, (30, 110)),
     (Kind::Compact, (100, 28), (100, 28), false, (2, 98)),
-    (Kind::Small, (80, 24), (46, 24), false, (19, 61)),
+    (Kind::Focus, (0, 0), FOCUS_MIN, false, (0, 0)),
 ];
+/// The smallest terminal the focus layout is used at.
+pub const FOCUS_MIN: (u16, u16) = (30, 19);
 /// The 200x56 drawing: the tall body with room for full panels.
 const LARGE: Shell = (Kind::Large, (200, 56), (200, 56), false, (66, 134));
 
@@ -102,6 +105,7 @@ pub fn bodies() -> Vec<(Kind, (u16, u16))> {
     SHELLS
         .iter()
         .chain([&LARGE])
+        .filter(|shell| shell.0 != Kind::Focus)
         .map(|shell| (shell.0, shell.4))
         .collect()
 }
@@ -165,7 +169,9 @@ pub fn plan(cols: u16, rows: u16, view: View, shrink: u8) -> Plan {
         .collect();
     match fitting.get(usize::from(shrink).min(fitting.len().saturating_sub(1))) {
         Some((kind, size, _, sides, body)) => {
-            place(*kind, *size, *sides, fitting.len() as u8 - 1, Some(*body))
+            // The focus layout fills the terminal: no room is left for panels.
+            let body = (*kind != Kind::Focus).then_some(*body);
+            place(*kind, *size, *sides, fitting.len() as u8 - 1, body)
         }
         None => place(Kind::TooSmall, (40, 12), false, 0, None),
     }
@@ -184,7 +190,10 @@ mod tests {
         assert!(plan(140, 39, View::Shell, 0).sides);
         assert_eq!(kind(70, 60, View::Shell), Kind::Tall);
         assert_eq!(kind(100, 28, View::Shell), Kind::Compact);
-        assert_eq!(kind(80, 24, View::Shell), Kind::Small);
+        assert_eq!(kind(80, 24, View::Shell), Kind::Focus);
+        assert_eq!(kind(68, 38, View::Panels), Kind::Focus);
+        assert_eq!(kind(30, 19, View::Shell), Kind::Focus);
+        assert_eq!(kind(30, 18, View::Shell), Kind::TooSmall);
         assert_eq!(kind(40, 12, View::Shell), Kind::TooSmall);
         assert_eq!(kind(40, 12, View::Screen), Kind::Screen);
         assert_eq!(kind(12, 4, View::Screen), Kind::TooSmall);
@@ -254,12 +263,12 @@ mod tests {
                 Kind::Wide,
                 Kind::Tall,
                 Kind::Compact,
-                Kind::Small,
-                Kind::Small,
-                Kind::Small
+                Kind::Focus,
+                Kind::Focus,
+                Kind::Focus
             ]
         );
         assert_eq!(plan(200, 60, View::Shell, 0).smaller, 3);
-        assert_eq!(plan(80, 24, View::Shell, 3).kind, Kind::Small);
+        assert_eq!(plan(80, 24, View::Shell, 3).kind, Kind::Focus);
     }
 }

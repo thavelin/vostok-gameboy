@@ -80,7 +80,6 @@ fn shell(kind: Kind) -> (&'static Art, &'static [Label], (u16, u16)) {
         Kind::Large => (&art::LARGE, LARGE_LABELS, (45, 21)),
         Kind::Tall => (&art::TALL, TALL_LABELS, (45, 21)),
         Kind::Compact => (&art::COMPACT, COMPACT_LABELS, (53, 24)),
-        Kind::Small => (&art::SMALL, &[], (27, 12)),
         _ => (&art::WIDE, WIDE_LABELS, (45, 21)),
     }
 }
@@ -367,6 +366,7 @@ fn player(
             return (format!("⏸ {}", game.name), "TOO SMALL".into());
         }
         Kind::Screen => picture = screen::fit(plan.content),
+        Kind::Focus => picture = focus(buf, app, plan.content, &down),
         kind => {
             let (drawing, labels, size) = shell(kind);
             art::draw(buf, drawing, ox, oy, plan.content, &paint, theme.bg);
@@ -404,9 +404,7 @@ fn player(
         screen::half_blocks(buf, picture, &game.frame);
     }
 
-    let scale = if plan.kind == Kind::Small {
-        "×1"
-    } else if plan.kind == Kind::Screen {
+    let scale = if matches!(plan.kind, Kind::Screen | Kind::Focus) {
         "fit"
     } else {
         "×2"
@@ -471,6 +469,116 @@ fn player(
         format!("{mark} {}", game.name),
         format!("{scale} {} · {:.1} fps", protocol(app), game.status.fps),
     )
+}
+
+/// The small-terminal player: the picture as large as fits, in a slim bezel,
+/// with the controls in a strip of body tucked under it. Returns where the
+/// picture goes.
+fn focus(buf: &mut Buffer, app: &App, content: Rect, down: &[bool; 8]) -> Rect {
+    let content = content.intersection(buf.area);
+    let color = |letter: u8| art::color(app.theme, letter);
+    // Two columns of body and two of bezel each side, a margin of one; a row
+    // of body and one of bezel above, a row of bezel, three of controls and
+    // the bottom edge below.
+    let room = Rect::new(
+        0,
+        0,
+        content.width.saturating_sub(10),
+        content.height.saturating_sub(7),
+    );
+    if room.is_empty() {
+        return Rect::new(content.x, content.y, 0, 0);
+    }
+    let fitted = screen::fit(room);
+    let (w, h) = (fitted.width + 8, fitted.height + 7);
+    let x0 = content.x + (content.width - w) / 2;
+    let y0 = content.y + (content.height - h) / 2;
+    let picture = Rect::new(x0 + 4, y0 + 2, fitted.width, fitted.height);
+
+    let mut block =
+        |rect: Rect, symbol: &str, fg: ratatui::style::Color, bg: ratatui::style::Color| {
+            for y in rect.top()..rect.bottom() {
+                for x in rect.left()..rect.right() {
+                    let cell = &mut buf[(x, y)];
+                    cell.reset();
+                    cell.set_symbol(symbol).set_fg(fg).set_bg(bg);
+                }
+            }
+        };
+    let (body, bezel) = (color(b'b'), color(b'z'));
+    block(Rect::new(x0, y0, w, h), " ", body, body);
+    block(Rect::new(x0, y0, w, 1), "▀", color(b'h'), body);
+    block(Rect::new(x0, y0 + h - 1, w, 1), "▄", color(b'l'), body);
+    // The cut corner every one of these has, bottom right.
+    block(
+        Rect::new(x0 + w - 2, y0 + h - 1, 2, 1),
+        " ",
+        body,
+        color(b's'),
+    );
+    block(
+        Rect::new(x0 + 2, y0 + 1, w - 4, picture.height + 2),
+        " ",
+        bezel,
+        bezel,
+    );
+    block(picture, " ", color(b'd'), color(b'd'));
+    block(
+        Rect::new(x0 + 2, picture.y + picture.height / 3, 1, 1),
+        "■",
+        color(b'L'),
+        bezel,
+    );
+
+    // Controls: d-pad left, B and A right, Select and Start between them
+    // where the body is wide enough.
+    let cy = y0 + picture.height + 3;
+    let pad = |button: Button| color(if down[button.index()] { b'P' } else { b'p' });
+    let dx = x0 + 3;
+    for (button, x, y) in [
+        (Button::Up, dx + 2, cy),
+        (Button::Left, dx, cy + 1),
+        (Button::Right, dx + 4, cy + 1),
+        (Button::Down, dx + 2, cy + 2),
+    ] {
+        block(Rect::new(x, y, 2, 1), " ", pad(button), pad(button));
+    }
+    block(
+        Rect::new(dx + 2, cy + 1, 2, 1),
+        " ",
+        color(b'p'),
+        color(b'p'),
+    );
+    let ax = x0 + w - 7;
+    for (button, x, y) in [(Button::A, ax, cy), (Button::B, ax - 6, cy + 1)] {
+        let (top, face) = if down[button.index()] {
+            (color(b'n'), color(b'o'))
+        } else {
+            (color(b'N'), color(b'n'))
+        };
+        block(Rect::new(x, y, 4, 1), "▀", top, face);
+        block(Rect::new(x, y + 1, 4, 1), " ", face, face);
+    }
+    let wide = w >= 44;
+    if wide {
+        let mx = x0 + w / 2;
+        for (button, x) in [(Button::Select, mx - 7), (Button::Start, mx + 1)] {
+            block(Rect::new(x, cy + 1, 6, 1), "▄", pad(button), body);
+        }
+    }
+    let ink = color(b'k');
+    let mut text = |x: u16, y: u16, text: &str, strong: bool| {
+        art::print(buf, i32::from(x), i32::from(y), text, ink, strong, content);
+    };
+    text(ax + 1, cy + 1, "A", true);
+    text(ax - 5, cy + 2, "B", true);
+    if wide {
+        let mx = x0 + w / 2;
+        text(mx - 5, cy, "VOSTOK BOY", true);
+        text(mx - 7, cy + 2, "SELECT", false);
+        text(mx + 1, cy + 2, "START", false);
+    }
+    picture
 }
 
 /// Key lists either side of the wide body.
@@ -1520,7 +1628,7 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         settle(&mut app);
         type Case = (u16, u16, &'static [&'static str], (u16, u16));
-        let cases: [Case; 5] = [
+        let cases: [Case; 6] = [
             (
                 140,
                 39,
@@ -1538,7 +1646,9 @@ mod tests {
             ),
             (70, 60, &["◂OFF·ON▸", "DOT MATRIX", "PHONES"], (45, 21)),
             (100, 28, &["SELECT", "START"], (54, 25)),
-            (80, 24, &["▶ RUNNING"], (27, 13)),
+            // Small terminals: the picture takes the room, the controls go under it.
+            (80, 24, &["▶ RUNNING"], (31, 14)),
+            (68, 38, &["VOSTOK BOY", "SELECT", "START"], (58, 26)),
             (100, 45, &["DOT MATRIX", "PHONES"], (45, 21)),
         ];
         for (cols, rows, words, hole) in cases {

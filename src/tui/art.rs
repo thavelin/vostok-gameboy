@@ -34,7 +34,6 @@ art!(LARGE, "large");
 art!(WIDE, "wide");
 art!(TALL, "tall");
 art!(COMPACT, "compact");
-art!(SMALL, "small");
 art!(MINI, "mini");
 art!(PAUSE, "pause");
 art!(CARTRIDGE, "cartridge");
@@ -350,8 +349,7 @@ mod tests {
                 Kind::Large => &LARGE,
                 Kind::Wide => &WIDE,
                 Kind::Tall => &TALL,
-                Kind::Compact => &COMPACT,
-                _ => &SMALL,
+                _ => &COMPACT,
             };
             let filled: Vec<usize> = (0..art.w * art.h)
                 .filter(|at| !matches!(art.cells[*at], b'.' | b' '))
@@ -382,7 +380,6 @@ mod tests {
             (&*LARGE, 200, 56, (45, 21)),
             (&*TALL, 70, 60, (45, 21)),
             (&*COMPACT, 100, 28, (54, 25)),
-            (&*SMALL, 80, 24, (27, 13)),
         ] {
             assert_eq!((art.cols(), art.rows()), (cols, rows));
             let found = art.hole();

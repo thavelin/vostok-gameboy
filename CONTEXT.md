@@ -36,6 +36,9 @@ Vostok Gameboy. The emulation itself is `gameboy_core` 0.3.3 (Apache-2.0), copie
   Herdr sends "key down, key up" back to back, so `InputTracker` ignores such releases and uses its hold
   timer; and panels are the default view, fitted to the room beside any body (`Plan::panels`), because he
   wants them whenever there is space.
+- Troy on small panes (2026-11-14, about 68x38): the 80x24 drawing made the game tiny. He asked for the screen
+  to be the focus with a little of the handheld left and the controls tucked under, so the 80x24 drawing is
+  gone and `Kind::Focus` (drawn in code, `view::focus`) is used below 100x28. Seen as a snapshot only.
 
 ## Not checked
 

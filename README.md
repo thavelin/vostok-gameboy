@@ -10,9 +10,10 @@ green **VOSTOK BOY** shell whose d-pad and buttons light up as you press the key
 
 ## Features
 
-- **The shell** — five drawings, picked to fit the terminal: 200x56 (tall body, full panels), 140x39 (wide),
-  70x60 (tall), 100x28 and 80x24. Too small for any of them, the game pauses and says so; F2 switches to the
-  screen alone, which fits down to 20x10.
+- **The shell** — four drawings, picked to fit the terminal: 200x56 (tall body, full panels), 140x39 (wide),
+  70x60 (tall) and 100x28. In a smaller pane the game takes over: the picture as large as fits in a slim
+  bezel, with the d-pad and buttons in a strip under it (down to 30x19; `-` switches to it at any size).
+  F2 shows the screen alone, which fits down to 20x10.
 - **Panels** — wherever there are about 38 spare columns each side of the body: cartridge, save states and
   library on the left; status, render and input on the right (fewer in a short terminal). With less room the
   wide body shows its key lists instead.
@@ -71,7 +72,7 @@ Playing:
 | M | Mute |
 | F6 | Next palette |
 | F2 | View: panels (where they fit), plain shell, screen only |
-| - / + | Smaller / larger shell |
+| - / + | Smaller / larger shell; the smallest is the screen-first layout |
 | F3 | Theme |
 | ? | All keys |
 | Q | Back to the library |

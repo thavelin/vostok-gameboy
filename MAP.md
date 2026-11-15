@@ -58,6 +58,9 @@ two by two per terminal cell, followed by a `parts` grid that says which cells b
 (U D L R A B, E select, T start). `art.rs` lists what each letter means. The picture goes in the largest
 all-`d` (deep) block of the drawing, at the size `view::shell` gives for that drawing.
 
+Below 100x28 there is no drawing: `view::focus` paints the bezel and control strip to measure around the
+largest picture that fits (`Kind::Focus`).
+
 To change a colour: `art::color`. To move a label: the `*_LABELS` tables in `view.rs`. To add a size: an asset,
 a row in `layout::SHELLS`, an arm in `view::shell`.
 
