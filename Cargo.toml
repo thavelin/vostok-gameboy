@@ -31,6 +31,12 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 crc32fast = "1"
 # Screenshots from `ctl run --shot`.
 png = "0.18"
+# The terminal UI (src/tui): the same stack as the other Vostok Rust apps.
+ratatui = "0.30"
+anyhow = "1"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 tempfile = "3"

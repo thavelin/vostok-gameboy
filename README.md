@@ -1,105 +1,84 @@
 # Vostok Gameboy
 
-> A fork of [terminal_gameboy](https://github.com/dquigles/terminal_gameboy) by Dillon Quigley, being rebuilt as a Vostok terminal app.
-> The backend is described in [MAP.md](MAP.md); current state and limits are in [CONTEXT.md](CONTEXT.md).
-> The screenshots below are from the original app.
+A Game Boy and Game Boy Color emulator for the terminal, drawn as a handheld: the game runs in the screen of a
+green **VOSTOK BOY** shell whose d-pad and buttons light up as you press the keys.
 
-A rust, terminal-based Game Boy and Game Boy Color emulator with ASCII art and block rendering modes. Play your favorite retro games right in your terminal!
-
-The emulator itself is [gameboy_core](https://crates.io/crates/gameboy_core), kept in `core/` with save states added (see `core/README.md`).
-
-## Demo
-
-![Terminal GameBoy demo](media/terminal_gameboy.gif)
-
-![Pokemon Crystal running in block mode](./images/PokemonCrystal.png)
+> A fork of [terminal_gameboy](https://github.com/dquigles/terminal_gameboy) by Dillon Quigley, rebuilt as a Vostok
+> terminal app. How the code is laid out is in [MAP.md](MAP.md); current state and limits are in
+> [CONTEXT.md](CONTEXT.md). The emulator itself is [gameboy_core](https://crates.io/crates/gameboy_core), kept in
+> `core/` with save states added (see `core/README.md`).
 
 ## Features
 
-- **Two rendering modes:**
-  - **ASCII mode** — Classic ASCII art using brightness characters
-  - **Block mode** — Unicode half-block characters for higher fidelity
-- **Audio support** — Full sound emulation via rodio
-- **Battery saves** — Automatic save/load for games with battery backup
-- **Save states** — Four slots per game, each a snapshot of the whole machine with a preview picture
-- **Interactive menu** — ROM browser when launched without arguments
-- **Cross-platform** — Works on macOS, Linux, and Windows
+- **The shell** — five drawings, picked to fit the terminal: 140x39 (wide, key lists at the sides), 70x60 (tall),
+  100x28, 80x24, and 200x56 with information panels (F2). Too small for any of them, the game pauses and says
+  so; F2 switches to the screen alone, which fits down to 20x10.
+- **The picture** — real pixels in terminals with Kitty graphics (Kitty, Ghostty, WezTerm, Konsole, herdr);
+  half-blocks everywhere else.
+- **Library** — every `.gb`, `.gbc` and `.zip` in your ROM folders, with search, sort, play time and save slots.
+- **Save states** — four slots per game with a preview picture; battery saves as standard `.sav` files.
+- **Sound**, turbo, five palettes for four-shade games (kept per game), two themes (phosphor, amber).
+- **JSON command line** for scripts and agents (`vostok-gameboy ctl`).
 
-## Installation
+## Install
+
+Needs [Rust](https://rustup.rs).
 
 ```bash
-cargo build --release
+./setup.sh
 ```
 
-The binary will be at `target/release/vostok-gameboy`.
+On Windows run `setup.cmd`. Then start it with `./run.sh` or `run.cmd`; both rebuild first when the source changed.
 
-## Usage
-
-### Interactive Mode
-
-Simply run without arguments to get an interactive ROM browser:
+## Use
 
 ```bash
 vostok-gameboy
 ```
 
-![Interactive ROM browser menu](./images/menu.png)
-
-### Command Line
+opens the library. The first time, press `d` and type the folder your games are in.
 
 ```bash
-vostok-gameboy <rom.gb | rom.gbc | rom.zip> [OPTIONS]
+vostok-gameboy Tetris.zip
 ```
 
-#### Options
+plays one game directly.
 
-| Flag      | Description                                         |
-| --------- | --------------------------------------------------- |
-| `--ascii` | ASCII art mode with brightness characters (default) |
-| `--block` | Unicode block mode with solid half-blocks           |
-| `--mute`  | Disable audio output                                |
-| `--palette NAME` | Colours for four-shade games: grey, dmg, pocket, phosphor, amber |
-| `--help`  | Show help message                                   |
+| Option | |
+| --- | --- |
+| `--mute` | No sound |
+| `--palette NAME` | grey, dmg, pocket, phosphor, amber (four-shade games) |
+| `--theme NAME` | phosphor or amber |
+| `--pixels` / `--text` | Force Kitty graphics / half-blocks (`VOSTOK_GAMEBOY_RENDER=pixels` or `text` does the same) |
 
-### Examples
+## Keys
 
-```bash
-# Run with ASCII rendering (default)
-vostok-gameboy pokemon.gb
+Playing:
 
-# Run with block rendering
-vostok-gameboy pokemon.gb --block
+| Key | |
+| --- | --- |
+| Arrows / WASD | D-pad |
+| Z / K | A |
+| X / J | B |
+| Enter | Start |
+| Backspace / Space | Select |
+| P / Esc | Pause menu (resume, save, load, palette, controls, reset, quit) |
+| F5 / F8 | Save / load the selected slot |
+| Tab | Turbo x4: tap to switch, hold to use while held |
+| M | Mute |
+| F6 | Next palette |
+| F2 | View: shell, shell + panels, screen only |
+| - / + | Smaller / larger shell |
+| F3 | Theme |
+| ? | All keys |
+| Q | Back to the library |
 
-# Run without sound
-vostok-gameboy pokemon.gb --mute
-```
+In the pause menu: up / down choose, left / right or 1-4 pick the slot, Enter chooses, Del clears the slot.
 
-#### Rendering Modes
+Library: up / down, Enter play, `r` resume the newest save state, `/` search, `s` sort, `d` add a folder,
+`p` palette, `i` cartridge details, `q` quit.
 
-**ASCII Mode** — uses brightness characters for a classic terminal look:
-
-![ASCII rendering mode](./images/AsciiInGame.png)
-
-![ASCII mode - Pokemon Crystal](./images/CrystalAscii.png)
-
-**Block Mode** — uses Unicode half-blocks for higher fidelity:
-
-![Block mode - Pokemon Red](./images/RedBlock.png)
-
-## Controls
-
-| Key               | Action          |
-| ----------------- | --------------- |
-| Arrow keys / WASD | D-Pad           |
-| Z / K             | A button        |
-| X / J             | B button        |
-| Enter             | Start           |
-| Backspace / Space | Select          |
-| P                 | Pause           |
-| Tab               | Turbo on / off  |
-| Q / Esc           | Quit (saves)    |
-
-Keys are set in the `[keys]` table of `~/.config/vostok-gameboy/config.toml`.
+The eight buttons are set in the `[keys]` table of `~/.config/vostok-gameboy/config.toml`.
 
 ## JSON command line
 
@@ -115,31 +94,19 @@ vostok-gameboy ctl states Tetris.zip
 vostok-gameboy ctl palette Tetris.zip amber
 ```
 
-## Terminal Requirements
+## Terminal
 
-For the best experience:
+- 24-bit colour and a monospace font. The shell is drawn with quarter-block characters, so a font that draws
+  those edge to edge (most do) looks best.
+- 140x39 or larger for the full shell; it steps down to smaller drawings by itself.
+- Terminals that report key releases (Kitty, Ghostty, WezTerm, Windows Terminal) give exact button holds;
+  elsewhere a held key is released a moment after its last repeat.
 
-- Use a terminal with **true color support** (24-bit color)
-- A **monospace font** is required
-- Recommended terminal size: **162×74** or larger
-- Terminals with keyboard release event support (Ghostty, Kitty, WezTerm) provide better input handling
+## ROM files
 
-### Tested Terminals
+You provide your own legally obtained `.gb` / `.gbc` files, loose or inside a `.zip`.
 
-| Terminal         | Status                                      |
-| ---------------- | ------------------------------------------- |
-| Ghostty          | ✅ Excellent                                |
-| Kitty            | ✅ Excellent                                |
-| WezTerm          | ✅ Excellent                                |
-| iTerm2           | ✅ Good                                     |
-| Terminal.app     | ⚠️ Unplayable, block mode has weird tearing |
-| Windows Terminal | ✅ Good                                     |
-
-## ROM Files
-
-This emulator requires Game Boy (`.gb`) or Game Boy Color (`.gbc`) ROM files, loose or inside a `.zip`. You must provide your own legally obtained ROM files.
-
-## Save Files
+## Saves
 
 Games with a battery save to `~/.config/vostok-gameboy/saves/<rom name>.sav` (a standard `.sav`). The save is
 written shortly after the game saves, when you pause, and on exit; the previous file is kept as `.sav.bak`.
@@ -154,8 +121,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-Built with:
-
+- [terminal_gameboy](https://github.com/dquigles/terminal_gameboy) by Dillon Quigley — the app this started from
 - [gameboy_core](https://crates.io/crates/gameboy_core) by Ben Konz — Game Boy emulation (Apache-2.0, copied into `core/`)
-- [crossterm](https://crates.io/crates/crossterm) — Terminal handling
-- [rodio](https://crates.io/crates/rodio) — Audio playback
+- [ratatui](https://crates.io/crates/ratatui) and [crossterm](https://crates.io/crates/crossterm) — terminal drawing and input
+- [rodio](https://crates.io/crates/rodio) — sound

@@ -36,11 +36,36 @@ field that changes during play goes into that module's `state_fields!` list and 
 
 ## Front end (binary)
 
+`src/main.rs` plus `src/tui/`. Everything that draws goes through one function, `view::render(buffer, app, clock)`,
+so a screen can be drawn into a plain buffer in a test.
+
 | File | What it is |
 | --- | --- |
-| `main.rs` | Argument handling and a stand-in player loop: the reference for how a screen drives a `Session`. |
-| `menu.rs`, `renderer.rs` | The original terminal_gameboy menu and ASCII / half-block drawing, unchanged. To be replaced by the Vostok TUI. |
-| `config.rs` | Bridge so the original menu can read and write its one ROM folder through `settings::Config`. |
+| `main.rs` | Arguments, raw mode / alternate screen (`TerminalGuard`), the loop: tick, read keys, redraw when `app.dirty`, send the picture. |
+| `tui/app.rs` | `App`: all state and every key. `Library` (list, search, sort, add folder), `Game` (the running `Session`, pause menu, slot, turbo). No drawing. |
+| `tui/layout.rs` | `plan(cols, rows, view, shrink)` -> which shell (`Kind`) and where. Pure. |
+| `tui/view.rs` | Draws a `Plan`: the shell, labels, side lists, panels, pause panel, library, help, status line and footer. Returns `Pictures`: where the game picture and thumbnails go. |
+| `tui/art.rs` | The shell drawings: parses `assets/shell/*.txt`, colours each layer from the theme, lights held buttons, draws with quarter-block characters. |
+| `tui/screen.rs` | The game picture as PNG (pixel terminals) or half-blocks. |
+| `tui/terminal.rs` | Pixels or half-blocks, decided from environment variables only. |
+| `tui/tokens.rs`, `chrome.rs`, `pixels.rs` | **Shared with the other Vostok Rust apps (vostok-files): keep them byte-identical**, change them there first. Themes, header / footer / frame helpers, Kitty graphics. |
+
+### The shell drawings
+
+`assets/shell/<name>.txt` is generated, not hand-edited: `python tools/cellart.py IN.svg SUBCELL_W SUBCELL_H OUT.txt`
+turns the designer's SVG (one path per colour layer, exported from the Figma file) into a grid of layer letters,
+two by two per terminal cell, followed by a `parts` grid that says which cells belong to which button
+(U D L R A B, E select, T start). `art.rs` lists what each letter means. The picture goes in the largest
+all-`d` (deep) block of the drawing, at the size `view::shell` gives for that drawing.
+
+To change a colour: `art::color`. To move a label: the `*_LABELS` tables in `view.rs`. To add a size: an asset,
+a row in `layout::SHELLS`, an arm in `view::shell`.
+
+### Looking at a screen without a terminal
+
+`vostok-gameboy [ROM] --html 140x39 [--frames N] > out.html` draws one screen and prints it as HTML (not in
+`--help`; a development aid). `VOSTOK_GAMEBOY_KEYS="esc down f2"` presses keys first (esc, enter, down, right,
+f2, f3, f5 or a character).
 
 ## A player screen, in short
 
