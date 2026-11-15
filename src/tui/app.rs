@@ -366,7 +366,7 @@ impl App {
         let control = matches!(key.code, KeyCode::Tab | KeyCode::Esc | KeyCode::F(_));
         if let Some(button) = self.keys.lookup(key.code).filter(|_| !control) {
             let edge = match key.kind {
-                KeyEventKind::Release => game.input.release(button),
+                KeyEventKind::Release => game.input.release(button, now),
                 _ => game.input.press(button, now),
             };
             if let Some(edge) = edge {
@@ -704,6 +704,9 @@ pub mod tests {
         let down = |app: &App, button| app.game.as_ref().unwrap().input.is_down(button);
         use vostok_gameboy::input::Button;
         assert!(down(&app, Button::A) && down(&app, Button::Left) && !down(&app, Button::B));
+        // A finger takes longer than this to come back up; a release in the
+        // same instant as the press is not believed (see InputTracker).
+        std::thread::sleep(Duration::from_millis(30));
         release(&mut app, KeyCode::Char('z'));
         assert!(!down(&app, Button::A) && down(&app, Button::Left));
         // Opening the menu lets go of everything.

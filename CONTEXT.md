@@ -36,6 +36,10 @@ Vostok Gameboy. The emulation itself is `gameboy_core` 0.3.3 (Apache-2.0), copie
 - **The app in a real terminal.** Nobody has played it yet: the loop in `main.rs` (keys, key releases, Kitty
   graphics placement and clean-up, resize, sound out loud) has only been compiled. Everything under it is
   tested through `App::key` and `view::render`.
+- First report from Troy (2026-11-14): it runs, but the keyboard did nothing. Suspected cause, fixed without
+  being reproduced: terminals that send "key down, key up" back to back (Herdr on Windows does this) let go of
+  a button before the game read it. `InputTracker` now ignores such releases and uses its hold timer. Not yet
+  confirmed by him; if keys are still dead, find out whether the library keys work too.
 - The quarter-block shell in fonts other than the browser's (seams between cells depend on the font).
 - Battery saves written by a real game (Pokemon) and loaded again. Covered by tests with the test ROM only.
 - A save state taken with the real-time clock running (no MBC3 clock game in the test set).

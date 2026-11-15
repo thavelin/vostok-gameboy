@@ -248,9 +248,18 @@ pub enum Edge {
 #[derive(Debug)]
 pub struct InputTracker {
     last_seen: [Option<Instant>; 8],
+    down_since: [Option<Instant>; 8],
     sees_releases: bool,
+    echoed_releases: bool,
     hold: Duration,
 }
+
+/// A release this soon after the key went down did not come from a finger.
+/// Terminals that turn typed characters back into key events (a multiplexer
+/// on Windows, for one) send "down, up" back to back for every key and
+/// every repeat; taken at face value the button would be let go before the
+/// game ever looked at it.
+const ECHO: Duration = Duration::from_millis(15);
 
 impl Default for InputTracker {
     fn default() -> Self {
@@ -265,7 +274,9 @@ impl InputTracker {
     pub fn new(hold: Duration) -> Self {
         Self {
             last_seen: [None; 8],
+            down_since: [None; 8],
             sees_releases: false,
+            echoed_releases: false,
             hold,
         }
     }
@@ -273,12 +284,28 @@ impl InputTracker {
     /// A press or repeat event. Returns the edge when the button was up before.
     pub fn press(&mut self, button: Button, now: Instant) -> Option<Edge> {
         let was_up = self.last_seen[button.index()].replace(now).is_none();
+        if was_up {
+            self.down_since[button.index()] = Some(now);
+        }
         was_up.then_some(Edge::Pressed(button))
     }
 
-    /// A release event. Seeing one switches the hold timer off for good.
-    pub fn release(&mut self, button: Button) -> Option<Edge> {
+    /// A release event. A real one switches the hold timer off; one that
+    /// comes in the same instant as its press (see [`ECHO`]) shows that this
+    /// terminal's releases mean nothing, and from then on they are ignored
+    /// and the hold timer lets go of buttons instead.
+    pub fn release(&mut self, button: Button, now: Instant) -> Option<Edge> {
+        let echoed = self.down_since[button.index()]
+            .is_some_and(|since| now.saturating_duration_since(since) < ECHO);
+        if echoed {
+            self.echoed_releases = true;
+            self.sees_releases = false;
+        }
+        if self.echoed_releases {
+            return None;
+        }
         self.sees_releases = true;
+        self.down_since[button.index()] = None;
         self.last_seen[button.index()]
             .take()
             .map(|_| Edge::Released(button))
@@ -304,6 +331,7 @@ impl InputTracker {
             let slot = &mut self.last_seen[button.index()];
             if slot.is_some_and(&due) {
                 *slot = None;
+                self.down_since[button.index()] = None;
                 edges.push(Edge::Released(button));
             }
         }
@@ -323,6 +351,31 @@ impl InputTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_release_in_the_same_instant_as_the_press_is_not_believed() {
+        let mut input = InputTracker::default();
+        let start = Instant::now();
+        let at = |ms: u64| start + Duration::from_millis(ms);
+        // "down, up" back to back, then the same again for each key repeat.
+        assert_eq!(
+            input.press(Button::A, at(0)),
+            Some(Edge::Pressed(Button::A))
+        );
+        assert_eq!(input.release(Button::A, at(0)), None);
+        assert!(input.is_down(Button::A));
+        assert!(!input.sees_releases());
+        assert_eq!(input.press(Button::A, at(100)), None);
+        assert_eq!(input.release(Button::A, at(101)), None);
+        // The hold timer lets go once the repeats stop.
+        assert!(input.expire(at(200)).is_empty());
+        assert_eq!(input.expire(at(260)), [Edge::Released(Button::A)]);
+        // A tap is held long enough for the game to see it.
+        input.press(Button::Start, at(300));
+        input.release(Button::Start, at(300));
+        assert!(input.expire(at(400)).is_empty());
+        assert_eq!(input.expire(at(460)), [Edge::Released(Button::Start)]);
+    }
 
     #[test]
     fn key_names_round_trip() {
@@ -399,10 +452,14 @@ mod tests {
     fn with_release_events_the_hold_timer_is_off() {
         let mut input = InputTracker::default();
         let start = Instant::now();
+        let later = start + Duration::from_millis(80);
         input.press(Button::Left, start);
         input.press(Button::B, start);
-        assert_eq!(input.release(Button::B), Some(Edge::Released(Button::B)));
-        assert_eq!(input.release(Button::B), None);
+        assert_eq!(
+            input.release(Button::B, later),
+            Some(Edge::Released(Button::B))
+        );
+        assert_eq!(input.release(Button::B, later), None);
         assert!(input.sees_releases());
         assert!(input.expire(start + Duration::from_secs(5)).is_empty());
         assert!(input.is_down(Button::Left));

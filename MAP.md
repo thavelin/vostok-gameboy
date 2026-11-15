@@ -83,7 +83,7 @@ let (mut frame, mut seen) = (Frame::default(), 0u64);
 
 // every tick (a few ms):
 for edge in input.expire(Instant::now()) { session.send(edge.into()); }
-// on a key event:  keys.lookup(code) → input.press(button, now) / input.release(button) → session.send(edge.into())
+// on a key event:  keys.lookup(code) → input.press(button, now) / input.release(button, now) → session.send(edge.into())
 if session.copy_frame(&mut frame, &mut seen) { /* draw `frame` */ }
 let status = session.status();                        // fps, frame_ms, load, frames, speed, palette, muted, unsaved, saved_at, slots, note, state
 // controls: session.send(Command::TogglePause | Speed(4) | Palette(p) | Mute(true) | Volume(0.5) | Reset | Save)
