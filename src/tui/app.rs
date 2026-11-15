@@ -405,9 +405,11 @@ impl App {
             KeyCode::F(6) if !repeat => self.next_palette(),
             KeyCode::F(2) if !repeat => {
                 self.view = self.view.next();
-                // Panels need 200x56: where they do not fit, skip to the next view.
-                if self.view == View::Panels
-                    && layout::plan(self.size.0, self.size.1, self.view, 0).kind != Kind::Large
+                // Without room for panels the two shell views look the same: skip one.
+                if self.view == View::Shell
+                    && layout::plan(self.size.0, self.size.1, View::Panels, self.shrink)
+                        .panels
+                        .is_none()
                 {
                     self.view = self.view.next();
                 }

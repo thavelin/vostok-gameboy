@@ -391,8 +391,8 @@ fn player(
             if plan.sides {
                 sides(buf, app, theme, &plan);
             }
-            if kind == Kind::Large {
-                panels(buf, app, game, theme, &plan, picture);
+            if let Some(columns) = plan.panels {
+                panels(buf, app, game, theme, columns, picture);
             }
         }
     }
@@ -454,8 +454,8 @@ fn player(
         bottom(buf, app, theme, None, &left, "esc resume", PAUSE_KEYS);
     } else {
         let shown = match plan.kind {
-            Kind::Large => View::Panels,
             Kind::Screen => View::Screen,
+            _ if plan.panels.is_some() => View::Panels,
             _ => View::Shell,
         };
         let right = format!("F2 {}", shown.name());
@@ -536,8 +536,14 @@ fn sides(buf: &mut Buffer, app: &App, theme: &Theme, plan: &Plan) {
 
 /// Label and value rows inside a panel.
 fn rows(buf: &mut Buffer, theme: &Theme, inner: Rect, lines: &[(&str, String)]) {
+    // A blank line between rows where the panel is tall enough for it.
+    let (lead, step) = if lines.len() * 2 <= usize::from(inner.height) {
+        (1, 2)
+    } else {
+        (0, 1)
+    };
     for (index, (label, value)) in lines.iter().enumerate() {
-        let y = i32::from(inner.y) + 1 + index as i32 * 2;
+        let y = i32::from(inner.y) + lead + index as i32 * step;
         put(
             buf,
             inner,
@@ -558,13 +564,48 @@ fn rows(buf: &mut Buffer, theme: &Theme, inner: Rect, lines: &[(&str, String)]) 
     }
 }
 
-/// The information panels of the 200x56 layout.
-fn panels(buf: &mut Buffer, app: &App, game: &Game, theme: &Theme, plan: &Plan, picture: Rect) {
-    let at = |x: u16, y: u16, h: u16| shifted(Rect::new(x, y, 62, h), plan.origin);
+/// A panel column cut into the three panels of the 200x56 design (19, 16
+/// and 15 rows of 52), two where it is too short for three, or one.
+fn stack(column: Rect) -> [Rect; 3] {
+    let none = Rect::new(column.x, column.y, 0, 0);
+    let piece = |y: u16, height: u16| Rect::new(column.x, column.y + y, column.width, height);
+    let rows = column.height;
+    if rows >= 44 {
+        let (first, second) = ((rows - 2) * 19 / 50, (rows - 2) * 16 / 50);
+        [
+            piece(0, first),
+            piece(first + 1, second),
+            piece(first + second + 2, rows - first - second - 2),
+        ]
+    } else if rows >= 22 {
+        let first = (rows - 1).div_ceil(2);
+        [piece(0, first), piece(first + 1, rows - first - 1), none]
+    } else {
+        [piece(0, rows), none, none]
+    }
+}
+
+/// The information panels beside the body: cartridge, save states and
+/// library on the left; status, render and input on the right. A short
+/// column keeps the first two of each side (input rather than render).
+fn panels(
+    buf: &mut Buffer,
+    app: &App,
+    game: &Game,
+    theme: &Theme,
+    columns: (Rect, Rect),
+    picture: Rect,
+) {
+    let (left, right) = (stack(columns.0), stack(columns.1));
+    let (render_at, input_at) = if right[2].height > 0 {
+        (right[1], right[2])
+    } else {
+        (right[2], right[1])
+    };
     let header = game.session.header();
     let status = &game.status;
 
-    let inner = chrome::draw_panel(buf, at(1, 2, 19), theme, "CARTRIDGE · КАРТРИДЖ", false);
+    let inner = chrome::draw_panel(buf, left[0], theme, "CARTRIDGE · КАРТРИДЖ", false);
     let check = if header.header_checksum_ok {
         "✓ checksum ok"
     } else {
@@ -610,9 +651,10 @@ fn panels(buf: &mut Buffer, app: &App, game: &Game, theme: &Theme, plan: &Plan, 
         ],
     );
 
-    let inner = chrome::draw_panel(buf, at(1, 22, 16), theme, "SAVE STATES · СОХРАНЕНИЯ", false);
+    let inner = chrome::draw_panel(buf, left[1], theme, "SAVE STATES · СОХРАНЕНИЯ", false);
+    let step = i32::from(inner.height / 4).clamp(1, 3);
     for (index, slot) in status.slots.iter().enumerate() {
-        let y = i32::from(inner.y) + 1 + index as i32 * 3;
+        let y = i32::from(inner.y) + i32::from(step > 1) + index as i32 * step;
         let x = i32::from(inner.x) + 1;
         let chosen = usize::from(game.slot) == index + 1;
         put(
@@ -646,13 +688,7 @@ fn panels(buf: &mut Buffer, app: &App, game: &Game, theme: &Theme, plan: &Plan, 
         }
     }
 
-    let inner = chrome::draw_panel(
-        buf,
-        at(1, 39, 15),
-        theme,
-        "LIBRARY · БИБЛИОТЕКА (recent)",
-        false,
-    );
+    let inner = chrome::draw_panel(buf, left[2], theme, "LIBRARY · БИБЛИОТЕКА (recent)", false);
     for (index, entry) in app
         .library
         .scan
@@ -695,7 +731,7 @@ fn panels(buf: &mut Buffer, app: &App, game: &Game, theme: &Theme, plan: &Plan, 
         );
     }
 
-    let inner = chrome::draw_panel(buf, at(137, 2, 19), theme, "STATUS · СОСТОЯНИЕ", false);
+    let inner = chrome::draw_panel(buf, right[0], theme, "STATUS · СОСТОЯНИЕ", false);
     let audio = if !status.audio_available {
         "no sound device".to_string()
     } else {
@@ -760,7 +796,7 @@ fn panels(buf: &mut Buffer, app: &App, game: &Game, theme: &Theme, plan: &Plan, 
         ],
     );
 
-    let inner = chrome::draw_panel(buf, at(137, 22, 16), theme, "RENDER · ВЫВОД", false);
+    let inner = chrome::draw_panel(buf, render_at, theme, "RENDER · ВЫВОД", false);
     rows(
         buf,
         theme,
@@ -791,7 +827,7 @@ fn panels(buf: &mut Buffer, app: &App, game: &Game, theme: &Theme, plan: &Plan, 
         ],
     );
 
-    let inner = chrome::draw_panel(buf, at(137, 39, 15), theme, "INPUT · КНОПКИ", false);
+    let inner = chrome::draw_panel(buf, input_at, theme, "INPUT · КНОПКИ", false);
     let all = |button| {
         app.keys
             .keys(button)
@@ -1552,11 +1588,28 @@ mod tests {
             "STATUS · СОСТОЯНИЕ",
             "RENDER · ВЫВОД",
             "INPUT · КНОПКИ",
-            "F2 shell+panels",
+            "F2 panels",
             "MBC1",
         ] {
             assert!(text.contains(part), "{part}\n{text}");
         }
+        // Wide but short: the wide body with two panels a side, no key lists.
+        let text = buffer_text(&draw(&mut app, 180, 45).0);
+        for part in [
+            "CARTRIDGE · КАРТРИДЖ",
+            "SAVE STATES",
+            "STATUS",
+            "INPUT · КНОПКИ",
+        ] {
+            assert!(
+                text.contains(part),
+                "{part}
+{text}"
+            );
+        }
+        assert!(!text.contains("RENDER · ВЫВОД") && !text.contains("KEYS · КНОПКИ"));
+        // No room beside the body: the plain shell.
+        assert!(!buffer_text(&draw(&mut app, 105, 75).0).contains("CARTRIDGE"));
         app.view = View::Screen;
         app.pixels = true;
         let (_, pics) = draw(&mut app, 160, 75);

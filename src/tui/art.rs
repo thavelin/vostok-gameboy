@@ -341,6 +341,29 @@ pub fn dim(buf: &mut Buffer, area: Rect, to: Color, keep: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_planner_knows_where_each_body_is() {
+        use crate::layout::{bodies, Kind};
+        for (kind, body) in bodies() {
+            let art: &Art = match kind {
+                Kind::Large => &LARGE,
+                Kind::Wide => &WIDE,
+                Kind::Tall => &TALL,
+                Kind::Compact => &COMPACT,
+                _ => &SMALL,
+            };
+            let filled: Vec<usize> = (0..art.w * art.h)
+                .filter(|at| !matches!(art.cells[*at], b'.' | b' '))
+                .map(|at| at % art.w / 2)
+                .collect();
+            let found = (
+                *filled.iter().min().unwrap() as u16,
+                *filled.iter().max().unwrap() as u16,
+            );
+            assert_eq!(found, body, "{kind:?}");
+        }
+    }
     use crate::chrome::buffer_text;
 
     fn paint() -> Paint {

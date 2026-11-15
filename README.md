@@ -10,9 +10,12 @@ green **VOSTOK BOY** shell whose d-pad and buttons light up as you press the key
 
 ## Features
 
-- **The shell** — five drawings, picked to fit the terminal: 140x39 (wide, key lists at the sides), 70x60 (tall),
-  100x28, 80x24, and 200x56 with information panels (F2). Too small for any of them, the game pauses and says
-  so; F2 switches to the screen alone, which fits down to 20x10.
+- **The shell** — five drawings, picked to fit the terminal: 200x56 (tall body, full panels), 140x39 (wide),
+  70x60 (tall), 100x28 and 80x24. Too small for any of them, the game pauses and says so; F2 switches to the
+  screen alone, which fits down to 20x10.
+- **Panels** — wherever there are about 38 spare columns each side of the body: cartridge, save states and
+  library on the left; status, render and input on the right (fewer in a short terminal). With less room the
+  wide body shows its key lists instead.
 - **The picture** — real pixels in terminals with Kitty graphics (Kitty, Ghostty, WezTerm, Konsole, herdr);
   half-blocks everywhere else.
 - **Library** — every `.gb`, `.gbc` and `.zip` in your ROM folders, with search, sort, play time and save slots.
@@ -67,7 +70,7 @@ Playing:
 | Tab | Turbo x4: tap to switch, hold to use while held |
 | M | Mute |
 | F6 | Next palette |
-| F2 | View: shell, shell + panels, screen only |
+| F2 | View: panels (where they fit), plain shell, screen only |
 | - / + | Smaller / larger shell |
 | F3 | Theme |
 | ? | All keys |

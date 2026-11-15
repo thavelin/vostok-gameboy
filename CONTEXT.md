@@ -40,6 +40,9 @@ Vostok Gameboy. The emulation itself is `gameboy_core` 0.3.3 (Apache-2.0), copie
   being reproduced: terminals that send "key down, key up" back to back (Herdr on Windows does this) let go of
   a button before the game read it. `InputTracker` now ignores such releases and uses its hold timer. Not yet
   confirmed by him; if keys are still dead, find out whether the library keys work too.
+- Troy's screenshots the same day (Herdr on Windows, a `cmd` pane): the shell and the Kitty picture draw
+  correctly at about 105x75 (tall body) and 245x72. He wants the side panels whenever there is room, so
+  panels are now the default view and fit themselves to the space beside any body (`layout::plan` -> `Plan::panels`).
 - The quarter-block shell in fonts other than the browser's (seams between cells depend on the font).
 - Battery saves written by a real game (Pokemon) and loaded again. Covered by tests with the test ROM only.
 - A save state taken with the real-time clock running (no MBC3 clock game in the test set).

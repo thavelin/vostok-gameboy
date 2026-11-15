@@ -43,7 +43,7 @@ so a screen can be drawn into a plain buffer in a test.
 | --- | --- |
 | `main.rs` | Arguments, raw mode / alternate screen (`TerminalGuard`), the loop: tick, read keys, redraw when `app.dirty`, send the picture. |
 | `tui/app.rs` | `App`: all state and every key. `Library` (list, search, sort, add folder), `Game` (the running `Session`, pause menu, slot, turbo). No drawing. |
-| `tui/layout.rs` | `plan(cols, rows, view, shrink)` -> which shell (`Kind`) and where. Pure. |
+| `tui/layout.rs` | `plan(cols, rows, view, shrink)` -> which shell (`Kind`), where, and the two panel columns beside it when there is room (`Plan::panels`). Pure. |
 | `tui/view.rs` | Draws a `Plan`: the shell, labels, side lists, panels, pause panel, library, help, status line and footer. Returns `Pictures`: where the game picture and thumbnails go. |
 | `tui/art.rs` | The shell drawings: parses `assets/shell/*.txt`, colours each layer from the theme, lights held buttons, draws with quarter-block characters. |
 | `tui/screen.rs` | The game picture as PNG (pixel terminals) or half-blocks. |
